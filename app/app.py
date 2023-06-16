@@ -5,6 +5,53 @@ import pickle
 import openai
 import os
 
+# Creating PDF
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.enums import TA_CENTER
+
+# Creating Word
+from docx import Document
+from docx.shared import Inches
+
+# To add date to the title of PDF file
+from datetime import datetime
+
+def generate_pdf(text,filename='output.pdf'):
+    doc = SimpleDocTemplate(filename, pagesize=letter)
+    styles = getSampleStyleSheet()
+    style = styles["Normal"]
+    paragraphs = [Paragraph("<font size='12'>" + p.strip() + "</font>", style) for p in text.split("\n\n")]
+    flowables = []
+    for p in paragraphs:
+        flowables.append(p)
+        flowables.append(Spacer(1, 12))
+    doc.build(flowables)
+    return doc
+
+def generate_filename():
+    now = datetime.now()
+    hour = now.hour
+    minute = now.minute
+    filename = f"employee_churn_{hour}_{minute}.pdf"
+    return filename
+
+statistical_findings = [
+  "There is a significant difference in average values between employees who left and those who stayed for column satisfaction_level.",
+  "There is no significant difference in average values between employees who left and those who stayed for column last_evaluation.",
+  "There is no significant difference in average values between employees who left and those who stayed for column number_project.",
+  "There is a significant difference in average values between employees who left and those who stayed for column average_montly_hours.",
+  "There is a significant difference in average values between employees who left and those who stayed for column time_spend_company.",
+  "There is a significant difference in average values between employees who left and those who stayed for column Work_accident.",
+  "There is a significant difference in average values between employees who left and those who stayed for column promotion_last_5years.",
+  "There is a significant difference in average values between employees who left and those who stayed for column left.",
+  "There is evidence to suggest a significant difference in the proportion of employees who left the company based on whether they had a work accident or not.",
+  "There is a significant difference in the average satisfaction level between employees who had a work accident and those who didn't.",
+  "There is a statistically significant association between the salary level of employees and the likelihood of them leaving the company."
+]
+
+
 def html_options(text=None, align="left", size=12, weight="normal", style="normal", color="#F4A460", bg_color=None, bg_size=16, on='main', to_link=None, image_width=None, image_height=None, image_source=None, image_bg_color=None):
     if on == 'main':
         st.markdown(f"""<div style="background-color:{bg_color};padding:{bg_size}px">
@@ -17,6 +64,7 @@ def html_options(text=None, align="left", size=12, weight="normal", style="norma
     elif on == 'link':
         image_style = f"background-color:{image_bg_color};" if image_bg_color else ""
         st.markdown(f"""<div style="text-align: {align};"><img width="{image_width}" height="{image_height}" src="{image_source}" style="{image_style}" /></a></div>""", unsafe_allow_html=True)
+
 
 # HEAD TO PICTURE
 st.image("images/Employee churn prediction.png")
@@ -77,6 +125,8 @@ model_df['promotion_last_5years'] = model_df['promotion_last_5years'].map(bool_m
 model_df['Work_accident'] = model_df['Work_accident'].map(bool_map)
 model_df['departments'] = model_df['departments'].map(depts_map)
 model_df['salary'] = model_df['salary'].map(salary_map)
+
+# Load model
 model_churn = pickle.load(open('emp_churn_final_model', 'rb'))
 
 
@@ -101,7 +151,7 @@ def AdviceGPT():
         else:
             leave_text = f'This employee is not churn according to ml model with {result_proba[0]} score'
         show_df['Informations']['Monthly Working Time'] = str(show_df['Informations']['Monthly Working Time'])  + ' hours'
-        message = f"How can I increase the productivity of this employee? Employee information: {show_df}. {leave_text}. Consider employee information and evaluate each information. Include numbers and values. Also comment on churn with the ML score rounded. Write engaging conclusion."
+        message = f"How can I increase the productivity of this employee? Employee information: {show_df}. {leave_text}. These are statistical test results based on hypothesis tests:{' '.join(statistical_findings)}. Consider employee information and evaluate each information. Include numbers and values. Also comment on churn with the ML score rounded. Write engaging conclusion."
         if message:
             messages.append({"role":"system", "content":message})
             response = openai.ChatCompletion.create(
@@ -111,6 +161,11 @@ def AdviceGPT():
         gpt_reply = response["choices"][0]["message"]["content"]
         messages.append({"role":"system", "content":gpt_reply})
     st.success(gpt_reply)
+
+    filename = generate_filename()
+    generate_pdf(gpt_reply,filename)
+    with open(filename, "rb") as f:
+        st.download_button("Download PDF", f.read(), file_name=filename, mime="application/pdf")
 
 
 def CustomGPT():
