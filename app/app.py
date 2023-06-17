@@ -78,6 +78,7 @@ def calculate_department_stats(data, sample_df, left=None):
             - time_spend_company
     """
     
+    filtered_df = np.nan
     department = sample_df.departments.iloc[0]
     if left is None:
         filtered_df = data[data.departments == department]   
@@ -90,7 +91,29 @@ def calculate_department_stats(data, sample_df, left=None):
     return stats_dict
 
 def explain_department_stats(stats_dict, department_name, left=None):
-    'The average '
+    """
+    Generates a string explaining the meaning of the values in a dictionary of department statistics.
+
+    Args:
+        stats_dict (dict): A dictionary containing the mean values of several employee performance metrics for a department.
+        department_name (str): The name of the department the stats_dict corresponds to.
+        left (bool or None): If left is None, generate an explanation for all employees in the department (both left and not left).
+                             If left is True, generate an explanation only for employees who have left the company.
+                             If left is False, generate an explanation only for employees who have not yet left the company.
+
+    Returns:
+        str: A string explaining the meaning of the values in the stats_dict dictionary.
+    """
+    if left is None:
+        explanation = f"These are the mean values for the {department_name} department:"
+    elif left:
+        explanation = f"These are the mean values for employees who is churn of the {department_name} department:"
+    else:
+        explanation = f"These are the mean values for employees who is not churn of the {department_name} department:"
+    for metric, value in stats_dict.items():
+        explanation += f" {metric.replace('_', ' ')}: {value:.2f}. "
+    # explanation += f"The employee is from this department."
+    return explanation
 
 statistical_findings = [
   "There is a significant difference in average values between employees who left and those who stayed for column satisfaction_level.",
@@ -197,29 +220,32 @@ with open("openai_api.txt") as file:
     openai.api_key = file.read()
 
 
-messages = [{"role":"system", "content":"Write like a world-known expert HR manager. Do not mention that you are HR manager, ever. Always include numbers and values."},]
+messages =  [{"role": "system", "content": "You are a world-known expert analyst. Do not mention that you are an analyst, ever. Use explicit numerical values in parantheses."}]
 
 def AdviceGPT():
     with st.spinner('⚡ Preparing analysis... '):
         leave_text = ''
         if result == 1:
             leave_text = f'This employee is churn according to ml model with {result_proba[1]} score'
-            department_stats = calculate_department_stats(df,model_df,1)
-            department_info = explain_department_stats(department_stats,model_df.departments.iloc[0],1)
+            department_info = explain_department_stats(calculate_department_stats(df,model_df,1),model_df.departments.iloc[0],1)
+            department_info += explain_department_stats(calculate_department_stats(df,model_df,0),model_df.departments.iloc[0],0)
+            department_info += explain_department_stats(calculate_department_stats(df,model_df),model_df.departments.iloc[0])
         else:
             leave_text = f'This employee is not churn according to ml model with {result_proba[0]} score'
-            department_stats = calculate_department_stats(df,model_df,0)
-            department_info = explain_department_stats(department_stats,model_df.departments.iloc[0],0)
+            department_info = explain_department_stats(calculate_department_stats(df,model_df,1),model_df.departments.iloc[0],1)
+            department_info += explain_department_stats(calculate_department_stats(df,model_df,0),model_df.departments.iloc[0],0)
+            department_info += explain_department_stats(calculate_department_stats(df,model_df),model_df.departments.iloc[0])
 
         show_df['Informations']['Monthly Working Time'] = str(show_df['Informations']['Monthly Working Time'])  + ' hours'
-        message = f"How can I increase the productivity of this employee? Employee information: {show_df}. {leave_text}. These are statistical test results based on hypothesis tests:{' '.join(statistical_findings)}.{department_info}. Consider employee information and evaluate each information. Also comment on churn with the ML score rounded. Write engaging conclusion."
+        message = f"How can I increase the productivity of this employee? Employee information: {show_df}. {leave_text}. These are statistical test results based on hypothesis tests:{' '.join(statistical_findings)} {department_info} Consider employee information and evaluate each information. Also comment on churn with the ML score rounded. Include also numbers for means. Write engaging conclusion."
+        
         if message:
-            messages.append({"role":"system", "content":message})
-            response = openai.ChatCompletion.create(
+            messages.append({"role":"user", "content":message})
+            completion = openai.ChatCompletion.create(
                         model = "gpt-3.5-turbo",
                         messages = messages
         )
-        gpt_reply = response["choices"][0]["message"]["content"]
+        gpt_reply = completion["choices"][0].message.content
         messages.append({"role":"system", "content":gpt_reply})
     st.success(gpt_reply)
 
