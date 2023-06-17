@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import pickle
 import openai
+import scipy.stats as stats
 import os
 
 # Creating PDF
@@ -18,7 +19,23 @@ from docx.shared import Inches
 # To add date to the title of PDF file
 from datetime import datetime
 
-def generate_pdf(text,filename='output.pdf'):
+df = pd.read_csv('HR_dataset.csv')
+df.drop_duplicates(inplace=True)
+df.reset_index(drop=True,inplace=True)
+df.rename(columns={'Departments ':'departments'}, inplace = True)
+df_statistical_test = df.drop(columns=['left','Work_accident','promotion_last_5years'])
+
+def generate_pdf(text: str, filename: str = 'output.pdf') -> SimpleDocTemplate:
+    """
+    Generates a PDF document from the given text and saves it to the specified filename.
+
+    Args:
+        text (str): The text to include in the PDF document.
+        filename (str, optional): The filename to save the PDF document to. Defaults to 'output.pdf'.
+
+    Returns:
+        SimpleDocTemplate: The generated PDF document object.
+    """
     doc = SimpleDocTemplate(filename, pagesize=letter)
     styles = getSampleStyleSheet()
     style = styles["Normal"]
@@ -30,12 +47,72 @@ def generate_pdf(text,filename='output.pdf'):
     doc.build(flowables)
     return doc
 
-def generate_filename():
-    now = datetime.now()
-    hour = now.hour
-    minute = now.minute
-    filename = f"employee_churn_{hour}_{minute}.pdf"
+def generate_filename() -> str:
+    """
+    Generates a filename for an employee churn report based on the current date and time.
+
+    Returns:
+        str: The filename in the format 'employee_churn_YYYY-MM-DD_HH-MM-SS.pdf'.
+    """
+    timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+    filename = f'employee_churn_{timestamp}.pdf'
     return filename
+
+def calculate_department_stats(data, sample_df, left=None):
+    """
+    Calculates the mean values of several employee performance metrics for a specific department in a dataframe.
+    
+    Args:
+        data (pandas.DataFrame): The dataframe containing employee data. 
+        sample_df (pandas.DataFrame): A separate dataframe containing information about the department of interest.
+        left (bool or None): If left is None, calculate stats for all employees in the department (both left and not left).
+                             If left is True, calculate stats only for employees who have left the company.
+                             If left is False, calculate stats only for employees who have not yet left the company.
+                             
+    Returns:
+        dict: A dictionary containing the mean values of the following employee performance metrics for the specified department: 
+            - satisfaction_level     
+            - last_evaluation
+            - number_project       
+            - average_montly_hours
+            - time_spend_company
+    """
+    
+    department = sample_df.departments.iloc[0]
+    if left is None:
+        filtered_df = data[data.departments == department]   
+    else:
+        filtered_df = data[(data.departments == department) & (data.left == int(left))]
+        
+    metrics = ['satisfaction_level', 'last_evaluation', 'number_project', 'average_montly_hours', 'time_spend_company']
+    stats_dict = filtered_df[metrics].mean().to_dict()
+        
+    return stats_dict
+
+def explain_department_stats(stats_dict, department_name, left=None):
+    """
+    Generates a string explaining the meaning of the values in a dictionary of department statistics.
+
+    Args:
+        stats_dict (dict): A dictionary containing the mean values of several employee performance metrics for a department.
+        department_name (str): The name of the department the stats_dict corresponds to.
+        left (bool or None): If left is None, generate an explanation for all employees in the department (both left and not left).
+                             If left is True, generate an explanation only for employees who have left the company.
+                             If left is False, generate an explanation only for employees who have not yet left the company.
+
+    Returns:
+        str: A string explaining the meaning of the values in the stats_dict dictionary.
+    """
+    if left is None:
+        explanation = f"These are the mean values for the {department_name} department:"
+    elif left:
+        explanation = f"These are the mean values for employees who have left the {department_name} department:"
+    else:
+        explanation = f"These are the mean values for employees who have not yet left the {department_name} department:"
+    for metric, value in stats_dict.items():
+        explanation += f" {metric.replace('_', ' ')}: {value:.2f}. "
+    explanation += f"The employee is from this department."
+    return explanation
 
 statistical_findings = [
   "There is a significant difference in average values between employees who left and those who stayed for column satisfaction_level.",
@@ -108,17 +185,18 @@ show_df = {'Informations':{'Departments': Departments,
 
 
 # LOAD MODEL
-
 model_df = pd.DataFrame(data=[[satisfaction_level, last_evaluation, number_project, 
                                 average_montly_hours, time_spend_company, Work_accident, 
                                 promotion_last_5years, Departments, salary]],
                         columns=['satisfaction_level', 'last_evaluation', 'number_project', 
                                 'average_montly_hours', 'time_spend_company', 'Work_accident', 
                                 'promotion_last_5years', 'departments', 'salary'])
+
+# Encoding
 depts_map = {"Sales":"sales" , "Technical":"technical" , "Support":"support" , "IT":"IT" , 
        "Research and Development":"RandD" , "Product Manager":"product_mng" , "Marketing":"marketing" , 
         "Accounting":"accounting" , "Human Resources":"hr" , "Management":"management", "Select":"Select", "Others":"Others"}
-salary_map = {"Low":1 , "Medium":2 , "High":0, "Select":"Select", "Other":"Others"}
+salary_map = {"Low":'low' , "Medium":'medium', "High":'high', "Select":"Select", "Other":"Others"}
 bool_map = {"False":0, 'True':1}
 
 model_df['promotion_last_5years'] = model_df['promotion_last_5years'].map(bool_map)
@@ -136,22 +214,27 @@ html_options(text='Employee', size=40, weight='bold', color='#FF4B4B', align='ce
 st.write('')
 st.table(show_df)
 
-# ChatGPT
+# Setting up OpenAI API key
 with open("openai_api.txt") as file:
     openai.api_key = file.read()
 
 
-messages = [{"role":"system", "content":"Write like a world-known expert HR manager. Do not mention that you are HR manager."},]
+messages = [{"role":"system", "content":"Write like a world-known expert HR manager. Do not mention that you are HR manager, ever. Always include numbers and values."},]
 
 def AdviceGPT():
-    with st.spinner('⚡Gearing up to blow your mind...'):
+    with st.spinner('⚡ Preparing analysis... '):
         leave_text = ''
         if result == 1:
             leave_text = f'This employee is churn according to ml model with {result_proba[1]} score'
+            department_stats = calculate_department_stats(df,model_df,1)
+            department_info = explain_department_stats(department_stats,model_df.departments.iloc[0],1)
         else:
             leave_text = f'This employee is not churn according to ml model with {result_proba[0]} score'
+            department_stats = calculate_department_stats(df,model_df,0)
+            department_info = explain_department_stats(department_stats,model_df.departments.iloc[0],0)
+
         show_df['Informations']['Monthly Working Time'] = str(show_df['Informations']['Monthly Working Time'])  + ' hours'
-        message = f"How can I increase the productivity of this employee? Employee information: {show_df}. {leave_text}. These are statistical test results based on hypothesis tests:{' '.join(statistical_findings)}. Consider employee information and evaluate each information. Include numbers and values. Also comment on churn with the ML score rounded. Write engaging conclusion."
+        message = f"How can I increase the productivity of this employee? Employee information: {show_df}. {leave_text}. These are statistical test results based on hypothesis tests:{' '.join(statistical_findings)}.{department_info}. Consider employee information and evaluate each information. Also comment on churn with the ML score rounded. Write engaging conclusion."
         if message:
             messages.append({"role":"system", "content":message})
             response = openai.ChatCompletion.create(
