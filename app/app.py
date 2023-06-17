@@ -90,29 +90,7 @@ def calculate_department_stats(data, sample_df, left=None):
     return stats_dict
 
 def explain_department_stats(stats_dict, department_name, left=None):
-    """
-    Generates a string explaining the meaning of the values in a dictionary of department statistics.
-
-    Args:
-        stats_dict (dict): A dictionary containing the mean values of several employee performance metrics for a department.
-        department_name (str): The name of the department the stats_dict corresponds to.
-        left (bool or None): If left is None, generate an explanation for all employees in the department (both left and not left).
-                             If left is True, generate an explanation only for employees who have left the company.
-                             If left is False, generate an explanation only for employees who have not yet left the company.
-
-    Returns:
-        str: A string explaining the meaning of the values in the stats_dict dictionary.
-    """
-    if left is None:
-        explanation = f"These are the mean values for the {department_name} department:"
-    elif left:
-        explanation = f"These are the mean values for employees who have left the {department_name} department:"
-    else:
-        explanation = f"These are the mean values for employees who have not yet left the {department_name} department:"
-    for metric, value in stats_dict.items():
-        explanation += f" {metric.replace('_', ' ')}: {value:.2f}. "
-    explanation += f"The employee is from this department."
-    return explanation
+    'The average '
 
 statistical_findings = [
   "There is a significant difference in average values between employees who left and those who stayed for column satisfaction_level.",
