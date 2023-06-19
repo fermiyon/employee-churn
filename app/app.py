@@ -9,8 +9,9 @@ import os
 # Creating PDF
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.enums import TA_CENTER
+from reportlab.lib import colors
 
 # Creating Word
 from docx import Document
@@ -19,33 +20,58 @@ from docx.shared import Inches
 # To add date to the title of PDF file
 from datetime import datetime
 
+# Importing df
 df = pd.read_csv('HR_dataset.csv')
 df.drop_duplicates(inplace=True)
 df.reset_index(drop=True,inplace=True)
 df.rename(columns={'Departments ':'departments'}, inplace = True)
 df_statistical_test = df.drop(columns=['left','Work_accident','promotion_last_5years'])
 
-def generate_pdf(text: str, filename: str = 'output.pdf') -> SimpleDocTemplate:
-    """
-    Generates a PDF document from the given text and saves it to the specified filename.
 
-    Args:
-        text (str): The text to include in the PDF document.
-        filename (str, optional): The filename to save the PDF document to. Defaults to 'output.pdf'.
-
-    Returns:
-        SimpleDocTemplate: The generated PDF document object.
-    """
+def generate_pdf(text: str, information_dict: dict, filename: str = 'output.pdf') -> SimpleDocTemplate:
     doc = SimpleDocTemplate(filename, pagesize=letter)
     styles = getSampleStyleSheet()
     style = styles["Normal"]
+    style.alignment = 4  # Justify alignment
+    style.leading = 14  # Line spacing within paragraphs
+
+    title_style = styles["Title"]
+    title = Paragraph("<font size='20'>Report</font>", title_style)
+
+    # Create information dictionary table
+    data = []
+    for key, value in information_dict.items():
+        data.append([key + ":", value])
+
+    # Calculate the width of the paragraph
+    paragraph_width = doc.width
+    paragraph = Paragraph(text, style)
+    paragraph_width = paragraph.wrap(paragraph_width, doc.topMargin)[0]
+
+    # Create the table with the calculated width
+    table = Table(data, hAlign='LEFT', colWidths=[paragraph_width * 0.49, paragraph_width * 0.49])
+    table.setStyle(TableStyle([
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 0), (-1, -1), 12),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ('TOPPADDING', (0, 0), (-1, -1), 8),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+    ]))
+
+    # Add title and information dictionary table to flowables
+    flowables = [title, Spacer(1, 24), table, Spacer(1, 24)]
     paragraphs = [Paragraph("<font size='12'>" + p.strip() + "</font>", style) for p in text.split("\n\n")]
-    flowables = []
     for p in paragraphs:
+        p.alignment = 4  # Justify alignment
         flowables.append(p)
-        flowables.append(Spacer(1, 12))
+        flowables.append(Spacer(1, 10))  # Line spacing between paragraphs
+
     doc.build(flowables)
     return doc
+
 
 def generate_filename() -> str:
     """
@@ -116,16 +142,16 @@ def explain_department_stats(stats_dict, department_name, left=None):
     return explanation
 
 statistical_findings = [
-  "There is a significant difference in average values between employees who left and those who stayed for column satisfaction_level.",
-  "There is no significant difference in average values between employees who left and those who stayed for column last_evaluation.",
-  "There is no significant difference in average values between employees who left and those who stayed for column number_project.",
-  "There is a significant difference in average values between employees who left and those who stayed for column average_montly_hours.",
-  "There is a significant difference in average values between employees who left and those who stayed for column time_spend_company.",
-  "There is a significant difference in average values between employees who left and those who stayed for column Work_accident.",
-  "There is a significant difference in average values between employees who left and those who stayed for column promotion_last_5years.",
-  "There is a significant difference in average values between employees who left and those who stayed for column left.",
+  "There is a statistically significant difference in average values between employees who left and those who stayed for column satisfaction_level.",
+  "There is no statistically significant difference in average values between employees who left and those who stayed for column last_evaluation.",
+  "There is no statistically significant difference in average values between employees who left and those who stayed for column number_project.",
+  "There is a statistically significant difference in average values between employees who left and those who stayed for column average_montly_hours.",
+  "There is a statistically significant difference in average values between employees who left and those who stayed for column time_spend_company.",
+  "There is a statistically significant difference in average values between employees who left and those who stayed for column Work_accident.",
+  "There is a statistically significant difference in average values between employees who left and those who stayed for column promotion_last_5years.",
+  "There is a statistically significant difference in average values between employees who left and those who stayed for column left.",
   "There is evidence to suggest a significant difference in the proportion of employees who left the company based on whether they had a work accident or not.",
-  "There is a significant difference in the average satisfaction level between employees who had a work accident and those who didn't.",
+  "There is a statistically significant difference in the average satisfaction level between employees who had a work accident and those who didn't.",
   "There is a statistically significant association between the salary level of employees and the likelihood of them leaving the company."
 ]
 
@@ -223,7 +249,7 @@ with open("openai_api.txt") as file:
 messages =  [{"role": "system", "content": "You are a world-known expert analyst. Do not mention that you are an analyst, ever. Use explicit numerical values in parantheses."}]
 
 def AdviceGPT():
-    with st.spinner('⚡ Preparing analysis... '):
+    with st.spinner('⚡ Gearing up to blow your mind... '):
         leave_text = ''
         if result == 1:
             leave_text = f'This employee is churn according to ml model with {result_proba[1]} score'
@@ -237,7 +263,7 @@ def AdviceGPT():
             department_info += explain_department_stats(calculate_department_stats(df,model_df),model_df.departments.iloc[0])
 
         show_df['Informations']['Monthly Working Time'] = str(show_df['Informations']['Monthly Working Time'])  + ' hours'
-        message = f"How can I increase the productivity of this employee? Employee information: {show_df}. {leave_text}. These are statistical test results based on hypothesis tests:{' '.join(statistical_findings)} {department_info} Consider employee information and evaluate each information. Also comment on churn with the ML score rounded. Include also numbers for means. Write engaging conclusion."
+        message = f"Write an analysis on that regarding churn analysis? Employee information: {show_df}. {leave_text}. These are statistical test results based on hypothesis tests:{' '.join(statistical_findings)} {department_info} Start with an introduction. Consider employee information and evaluate each information in a seperate paragraph. Also comment on churn with the ML score rounded. Include also numbers for means. In one paragraph answer the question of How can I increase the productivity of this employee? Write engaging conclusion."
         
         if message:
             messages.append({"role":"user", "content":message})
@@ -250,7 +276,7 @@ def AdviceGPT():
     st.success(gpt_reply)
 
     filename = generate_filename()
-    generate_pdf(gpt_reply,filename)
+    generate_pdf(gpt_reply,show_df['Informations'],filename)
     with open(filename, "rb") as f:
         st.download_button("Download PDF", f.read(), file_name=filename, mime="application/pdf")
 
@@ -300,7 +326,6 @@ st.write("")
 st.write("")
 st.write("")
 st.write("")
-st.image('images/contact.png',width=200)
 
 
 
